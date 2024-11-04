@@ -13,7 +13,7 @@ df = pd.read_csv('bold_response_LH.csv')
 
 
 def init_sample():
-    sample = {'target': None, 'final_embeddings': None}
+    sample = {'target': None, 'final_embeddings': None, 'tokens': None}
     d = {f'embeddgins_{k}': [] for k in range(33)}
     sample.update(d)
     return sample
@@ -44,13 +44,15 @@ for i, row in tqdm(df.iterrows(), total=len(df)):
     target = row.iloc[-1]
     sample = init_sample()
     inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=1024).to(model.device)
+    sample['tokens'] = inputs['input_ids']
     with torch.no_grad():
         outputs = model(**inputs)
         for j, emb in enumerate(outputs['hidden_states']):
             sample[f'embeddgins_{j}'] = F.normalize(emb.mean(dim=1).squeeze().cpu().to(torch.float32), p=2, dim=0).numpy()
         sample['final_embeddings'] = F.normalize(outputs['last_hidden_state'].mean(dim=1).squeeze().cpu().to(torch.float32),p=2, dim=0).numpy()
+        sample['tokens_embeddings'] = F.normalize(outputs['last_hidden_state'].squeeze().cpu().to(torch.float32), p=2, dim=0).numpy()
         sample['target'] = target
         new_df.append(sample)
 
-with open('processed_dataset_mixtral_8x7B_instruct_qlora_nf4_forward.pkl', 'wb') as f:
+with open('processed_dataset_mixtral_8x7B_instruct_qlora_nf4_forward_with_tokens.pkl', 'wb') as f:
     pickle.dump(new_df, f)

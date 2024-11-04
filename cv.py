@@ -1,11 +1,15 @@
 import pickle
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import KFold
 import torch.nn as nn
 from scipy.stats import pearsonr
 import torch
 from torch.utils.data import Dataset, DataLoader
 import copy
+from utils import prepare_input, get_word_by_index
+import argparse
+from transformers import AutoTokenizer
 
 
 class MLP(nn.Module):
@@ -13,11 +17,7 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.hidden_size = hidden_size
         self.fc1 = nn.Linear(input_size, output_size, bias=False)
-        # self.fc2 = nn.Linear(hidden_size, output_size, bias=True)
         nn.init.xavier_normal_(self.fc1.weight)
-        # nn.init.xavier_normal_(self.fc2.weight)
-        # self.relu = nn.ReLU()
-        # self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -100,34 +100,51 @@ def predict(model, x_test):
     return np.concatenate(all_preds).squeeze()
 
 
-with open('processed_dataset_mixtral_8x7B_instruct_qlora_nf4_reflect_forward.pkl', 'rb') as f:
-    data = pickle.load(f)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Run cross-validation on the extracted features')
+    parser.add_argument('--data', type=str,
+                        default='processed_dataset_mixtral_8x7B_instruct_qlora_nf4_forward_with_tokens.pkl',
+                        help='Path to the processed data file')
+    parser.add_argument('--model', type=str, default='mistralai/Mixtral-8x7B-Instruct-v0.1',
+                        help='Model ID')
+    parser.add_argument('--word', type=str, default='Reflect',
+                        help='Word of interest')
+    parser.add_argument('--nth_word', type=int, default=3,
+                        help='Index of the word of interest')
+    return parser.parse_args()
 
-features = sorted(list(set(data[0].keys()) - {'target'}))
-kf = KFold(n_splits=5, shuffle=True, random_state=6)
 
-all_correlations = {}
 
-for feature in features:
-    if '17' not in feature:
-        continue
-    X = np.array([i[feature] for i in data]).squeeze()
-    y = np.array([i['target'] for i in data]).squeeze()
-    print(f"Running cross-validation for Layer {feature}")
+if __name__ == '__main__':
+    args = parse_args()
+    with open(args.data, 'rb') as f:
+        data = pickle.load(f)
+    words_of_interest = get_word_by_index(args.nth_word)
+    data = prepare_input(data, args.model, words_of_interest=words_of_interest)
 
-    fold_corrs = []
+    features = sorted(list(set(data[0].keys()) - {'target', 'tokens'}))
+    kf = KFold(n_splits=5, shuffle=True, random_state=6)
 
-    for train_index, test_index in kf.split(X):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y[train_index], y[test_index]
-        model = train(X_train, y_train, X_test, y_test)
-        y_pred = predict(model, X_test)
-        corr = pearsonr(y_pred, y_test).correlation
-        print(corr)
-        fold_corrs.append(corr)
+    all_correlations = {}
 
-    avg_accuracy = np.mean(fold_corrs)
-    all_correlations[feature] = avg_accuracy
-    print(f"Layer {feature} - Average 5-fold Accuracy: {avg_accuracy}")
+    for feature in features:
+        X = np.array([i[feature] for i in data]).squeeze()
+        y = np.array([i['target'] for i in data]).squeeze()
+        print(f"Running cross-validation for Layer {feature}")
 
-print(all_correlations)
+        fold_corrs = []
+
+        for train_index, test_index in kf.split(X):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            model = train(X_train, y_train, X_test, y_test)
+            y_pred = predict(model, X_test)
+            corr = pearsonr(y_pred, y_test).correlation
+            print(corr)
+            fold_corrs.append(corr)
+
+        avg_accuracy = np.mean(fold_corrs)
+        all_correlations[feature] = avg_accuracy
+        print(f"Layer {feature} - Average 5-fold Accuracy: {avg_accuracy}")
+
+    print(all_correlations)
