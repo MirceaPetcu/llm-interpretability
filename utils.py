@@ -2,7 +2,7 @@ from transformers import AutoTokenizer
 import pandas as pd
 
 
-def get_word_by_index(index):
+def get_word_by_index(index: int) -> list[str]:
     """
     :param index:
     :return: get the word at the index position from each sentence in the csv file
@@ -16,7 +16,14 @@ def get_word_by_index(index):
     return words_of_interest
 
 
-def prepare_input(inputs: list[dict], model_id: str, words_of_interest: list | str = None):
+def expand_tokens_idx(token_of_interest_idx: int, num_samples)-> list[int]:
+    token_of_interest_idx = [token_of_interest_idx] * num_samples
+    return token_of_interest_idx
+
+
+def prepare_input(inputs: list[dict], model_id: str,
+                  words_of_interest: list | str | None = None,
+                  token_of_interest_idx: int | None = None) -> list[dict]:
     """
     Returns the mean embedding of the tokens corresponding to the words of interest in the input text.
     """
@@ -42,6 +49,14 @@ def prepare_input(inputs: list[dict], model_id: str, words_of_interest: list | s
                 raise ValueError(f"Word '{words_of_interest[j]}' not found in the tokenized text.")
 
             word_embeddings = inpt['tokens_embeddings'][start_idx:start_idx + len(word_tokens)].mean(axis=0)
+            inpt['word_of_interst_embedding'] = word_embeddings
+            new_inputs.append(inpt)
+        return new_inputs
+    elif token_of_interest_idx is not None:
+        token_of_interest_idx = expand_tokens_idx(token_of_interest_idx, len(inputs))
+        new_inputs = []
+        for j, inpt in enumerate(inputs):
+            word_embeddings = inpt['tokens_embeddings'][token_of_interest_idx[j]]
             inpt['word_of_interst_embedding'] = word_embeddings
             new_inputs.append(inpt)
         return new_inputs

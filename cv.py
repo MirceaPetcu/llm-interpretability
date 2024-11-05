@@ -107,20 +107,41 @@ def parse_args():
                         help='Path to the processed data file')
     parser.add_argument('--model', type=str, default='mistralai/Mixtral-8x7B-Instruct-v0.1',
                         help='Model ID')
-    parser.add_argument('--word', type=str, default='Reflect',
+    parser.add_argument('--word', type=str, default=None,
                         help='Word of interest')
-    parser.add_argument('--nth_word', type=int, default=3,
+    parser.add_argument('--nth_word', type=int, default=None,
                         help='Index of the word of interest')
-    return parser.parse_args()
+    parser.add_argument('--token_idx', type=int, default=1,
+                        help='Index of the token of interest')
 
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_args()
     with open(args.data, 'rb') as f:
         data = pickle.load(f)
-    words_of_interest = get_word_by_index(args.nth_word)
-    data = prepare_input(data, args.model, words_of_interest=words_of_interest)
+
+    assert 'target' in data[0], "Target not found in the data"
+    if args.token_idx is not None:
+        assert 'tokens' in data[0], "Tokens not found in the data"
+        assert args.token_idx >= 0, "Token index should be a positive integer"
+    if args.word is not None and args.token_idx is not None:
+        raise ValueError("Please provide either a word of interest or a token index, not both.")
+    if args.word is not None and args.nth_word is not None:
+        raise ValueError("Please provide a word of interest or the nth word of interest from each sentence.")
+    if args.token_idx is not None and args.nth_word is not None:
+        raise ValueError("Please provide either a word of interest"
+                         " or the nth word of interest from each sentence, not both.")
+    if args.word is not None:
+        words_of_interest = args.word
+    elif args.nth_word is not None:
+        words_of_interest = get_word_by_index(args.nth_word)
+    else:
+        words_of_interest = None
+    data = prepare_input(data, args.model,
+                         words_of_interest=words_of_interest,
+                         token_of_interest_idx=args.token_idx)
 
     features = sorted(list(set(data[0].keys()) - {'target', 'tokens'}))
     kf = KFold(n_splits=5, shuffle=True, random_state=6)
